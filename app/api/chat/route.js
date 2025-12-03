@@ -8,11 +8,11 @@ export async function POST(req) {
     const body = await req.json();
     const { message, history } = body || {};
 
-    const apiKey = process.env.DEEPINFRA_API_KEY;
+    const apiKey = process.env.OPENROUTER_API_KEY;
 
     if (!apiKey) {
       return new Response(
-        `[ERRO DE CONFIG]: A variável DEEPINFRA_API_KEY não existe ou está vazia na Vercel.`,
+        `[ERRO DE CONFIG]: A variável OPENROUTER_API_KEY não existe ou está vazia na Vercel.`,
         {
           headers: { "Content-Type": "text/event-stream" },
         }
@@ -31,31 +31,23 @@ export async function POST(req) {
       stream: true,
     };
 
-    const resp = await fetch(
-      "https://openrouter.ai/api/v1/chat/completions",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-
-          // 🔥 CORREÇÃO AQUI
-          "HTTP-Referer": "https://chat-deepinfra.vercel.app",
-          "X-Title": "chat-deepinfra",
-        },
-        body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(60000),
-      }
-    );
+    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://chat-deepinfra.vercel.app",
+        "X-Title": "chat-deepinfra",
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(60000),
+    });
 
     if (!resp.ok) {
       const errorText = await resp.text();
-      return new Response(
-        `[ERRO OPENROUTER]: ${resp.status} - ${errorText}`,
-        {
-          headers: { "Content-Type": "text/event-stream" },
-        }
-      );
+      return new Response(`[ERRO OPENROUTER]: ${resp.status} - ${errorText}`, {
+        headers: { "Content-Type": "text/event-stream" },
+      });
     }
 
     return new Response(resp.body, {
