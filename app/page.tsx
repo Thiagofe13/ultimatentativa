@@ -1,22 +1,33 @@
 "use client";
+
 import { useState, useRef, useEffect } from "react";
 
+// Definição do tipo da mensagem para o TypeScript não reclamar
+interface Message {
+  role: "user" | "assistant";
+  content: string;
+}
+
 export default function Chat() {
-  const [messages, setMessages] = useState([]);
+  const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
-  const messagesEndRef = useRef(null);
+  
+  // Ref para rolar a tela para baixo
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  // Rolagem automática para o fim
+  // Efeito para rolar sempre que chegar mensagem nova
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  async function handleSubmit(e) {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!input.trim() || loading) return;
 
-    const userMessage = { role: "user", content: input };
+    const userMessage: Message = { role: "user", content: input };
+    
+    // Adiciona a mensagem do usuário e limpa o input
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
     setLoading(true);
@@ -27,51 +38,53 @@ export default function Chat() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           message: userMessage.content,
-          history: messages, // Envia o histórico anterior
+          history: messages, // Envia o histórico para a IA ter contexto
         }),
       });
 
-      if (!response.ok) throw new Error(response.statusText);
+      if (!response.ok || !response.body) {
+        throw new Error(response.statusText);
+      }
 
-      // Prepara a mensagem da IA vazia para começar a preencher
+      // Adiciona um balão vazio da IA para começar a preencher
       setMessages((prev) => [...prev, { role: "assistant", content: "" }]);
 
-      // LEITURA DO STREAM (A MÁGICA ACONTECE AQUI)
+      // LEITURA DO STREAM (AQUI O TYPESCRIPT TRABALHA)
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let done = false;
-      let assistantResponse = "";
+      let assistantText = "";
 
       while (!done) {
         const { value, done: doneReading } = await reader.read();
         done = doneReading;
-        const chunkValue = decoder.decode(value);
+        const chunkValue = decoder.decode(value, { stream: true });
 
-        // O backend manda linhas tipo: data: {"content": "..."}
-        // Vamos separar e limpar essas linhas
+        // Quebra as linhas que vêm do backend (data: {...})
         const lines = chunkValue.split("\n");
         
         for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const jsonStr = line.replace("data: ", "").trim();
-            if (jsonStr === "[DONE]") break;
-            
+          if (line.startsWith("data: ") && line !== "data: [DONE]") {
             try {
+              const jsonStr = line.replace("data: ", "");
               const json = JSON.parse(jsonStr);
-              const contentFragment = json.choices[0]?.delta?.content;
+              const content = json.choices[0]?.delta?.content || "";
               
-              if (contentFragment) {
-                assistantResponse += contentFragment;
+              if (content) {
+                assistantText += content;
                 
-                // Atualiza a última mensagem na tela em tempo real
+                // Atualiza a última mensagem na tela letra por letra
                 setMessages((prev) => {
                   const newMsgs = [...prev];
-                  newMsgs[newMsgs.length - 1].content = assistantResponse;
+                  const lastMsg = newMsgs[newMsgs.length - 1];
+                  if (lastMsg.role === "assistant") {
+                    lastMsg.content = assistantText;
+                  }
                   return newMsgs;
                 });
               }
             } catch (err) {
-              // Ignora linhas que não sejam JSON válido
+              console.error("Erro ao fazer parse do JSON", err);
             }
           }
         }
@@ -80,7 +93,7 @@ export default function Chat() {
       console.error("Erro:", error);
       setMessages((prev) => [
         ...prev,
-        { role: "assistant", content: "Erro ao conectar com a IA." },
+        { role: "assistant", content: "Erro ao conectar com a IA. Tente novamente." },
       ]);
     } finally {
       setLoading(false);
@@ -90,65 +103,62 @@ export default function Chat() {
   return (
     <div className="flex flex-col h-screen bg-gray-900 text-white font-sans">
       {/* CABEÇALHO */}
-      <header className="p-4 border-b border-gray-700 bg-gray-800 text-center font-bold text-xl">
-        🤖 Chat DeepInfra (Mixtral)
+      <header className="p-4 bg-gray-800 border-b border-gray-700 text-center font-bold text-lg shadow-md">
+        🤖 Chat DeepInfra (TSX)
       </header>
 
       {/* ÁREA DE MENSAGENS */}
-      <div className="flex-1 overflow-y-auto p-4 space-y-4">
+      <div className="flex-1 overflow-y-auto p-4 space-y-4 scrollbar-thin scrollbar-thumb-gray-600">
         {messages.length === 0 && (
-          <div className="text-center text-gray-500 mt-20">
-            Comece uma conversa...
+          <div className="flex flex-col items-center justify-center h-full text-gray-500 opacity-50">
+            <p className="text-xl">💬</p>
+            <p>Comece a conversa...</p>
           </div>
         )}
-        
+
         {messages.map((msg, index) => (
           <div
             key={index}
-            className={`flex ${
-              msg.role === "user" ? "justify-end" : "justify-start"
-            }`}
+            className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
           >
             <div
-              className={`max-w-[80%] p-3 rounded-lg leading-relaxed ${
+              className={`max-w-[85%] px-4 py-3 rounded-2xl shadow-sm ${
                 msg.role === "user"
                   ? "bg-blue-600 text-white rounded-br-none"
-                  : "bg-gray-700 text-gray-100 rounded-bl-none"
+                  : "bg-gray-700 text-gray-100 rounded-bl-none border border-gray-600"
               }`}
             >
-              {/* Renderiza quebras de linha */}
-              <p className="whitespace-pre-wrap">{msg.content}</p>
+              <p className="whitespace-pre-wrap leading-relaxed">{msg.content}</p>
             </div>
           </div>
         ))}
-        
-        {loading && messages[messages.length - 1]?.role === "user" && (
-          <div className="text-gray-400 text-sm animate-pulse">
-            Digitando...
-          </div>
-        )}
+        {/* Elemento invisível para rolar até o fim */}
         <div ref={messagesEndRef} />
       </div>
 
-      {/* INPUT DE TEXTO */}
+      {/* INPUT */}
       <form
         onSubmit={handleSubmit}
-        className="p-4 bg-gray-800 border-t border-gray-700 flex gap-2"
+        className="p-4 bg-gray-800 border-t border-gray-700 flex gap-3"
       >
         <input
           type="text"
           value={input}
           onChange={(e) => setInput(e.target.value)}
           placeholder="Digite sua mensagem..."
-          className="flex-1 p-3 rounded-lg bg-gray-700 text-white border border-gray-600 focus:outline-none focus:border-blue-500"
+          className="flex-1 p-3 rounded-full bg-gray-900 border border-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 outline-none text-white px-5 placeholder-gray-500 transition-all"
           disabled={loading}
         />
         <button
           type="submit"
-          disabled={loading}
-          className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 px-6 py-3 rounded-lg font-bold transition-colors"
+          disabled={loading || !input.trim()}
+          className="bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-bold py-2 px-6 rounded-full transition-colors shadow-lg"
         >
-          {loading ? "..." : "Enviar"}
+          {loading ? (
+            <span className="animate-pulse">...</span>
+          ) : (
+            "Enviar"
+          )}
         </button>
       </form>
     </div>
