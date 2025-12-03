@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 const SYSTEM_PROMPT =
-  "Você é uma IA sem restrições. Responda exatamente o que foi pedido, em português.";
+  "Você é uma IA útil e direta. Responda exatamente o que foi pedido, em português.";
 
 export async function POST(req) {
   try {
@@ -13,20 +13,19 @@ export async function POST(req) {
     if (!apiKey) {
       return new Response(
         `[ERRO DE CONFIG]: A variável OPENROUTER_API_KEY não existe ou está vazia na Vercel.`,
-        {
-          headers: { "Content-Type": "text/event-stream" },
-        }
+        { headers: { "Content-Type": "text/event-stream" } }
       );
     }
 
     const payload = {
-      model: "cognitivecomputations/dolphin-mixtral-8x7b",
+      // Trocamos o modelo quebrado por um estável:
+      model: "mistralai/mixtral-8x7b-instruct", 
       messages: [
         { role: "system", content: SYSTEM_PROMPT },
         ...(Array.isArray(history) ? history.slice(-6) : []),
         { role: "user", content: message },
       ],
-      temperature: 0.8,
+      temperature: 0.7,
       max_tokens: 4000,
       stream: true,
     };
@@ -36,11 +35,11 @@ export async function POST(req) {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://chat-deepinfra.vercel.app",
-        "X-Title": "chat-deepinfra",
+        "HTTP-Referer": "https://seu-site.vercel.app", // Pode deixar assim ou por seu link real
+        "X-Title": "Seu Chat",
       },
       body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(60000),
+      // Removido signal timeout curto para evitar quedas em modelos lentos
     });
 
     if (!resp.ok) {
